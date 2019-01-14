@@ -2,13 +2,11 @@
 
 \usetheme[progressbar=frametitle]{metropolis}
 \usepackage{appendixnumberbeamer}
-
 \usepackage{booktabs}
 \usepackage[scale=2]{ccicons}
-
 \usepackage{pgfplots}
 \usepgfplotslibrary{dateplot}
-
+\usepackage{listings}
 \usepackage{xspace}
 \newcommand{\themename}{\textbf{\textsc{metropolis}}\xspace}
 
@@ -30,9 +28,9 @@
 \item  \textit{1994} Learned C++ by Stroustrup, aged 15
 \item  \textit{1996-2002} Msc in applied mathematics, \href{https://www.timeshighereducation.com/world-university-rankings/moscow-institute-physics-and-technology}{Moscow institute of physics and technology (MIPT.ru)} 
 \item \textit{2002-2006} C++/win32 developer, custom DSP chip gcc toolchain porting, \href{http://www.ispras.ru/en/}{ispras.ru} 
-\item \textit{2006-2008} C++/C\# developer, reinforcement learning applied to stocks trading, \href{http://www.ccas.ru/index-e.htm}{ccas.ru}
+\item \textit{2006-2008} C++/C\# developer, reinforcement learning applied to portfolio optimization, \href{http://www.ccas.ru/index-e.htm}{ccas.ru}
 \item  \textit{2008-2016} java/linux developer, realtime distributed call center software, java/linux/oracle,  \href{https://en.wikipedia.org/wiki/Alcatel-Lucent}{Alcatel-Lucent}
-\item  \textit{2016...} R/C++ developer in a proprietary hedge fund, both research and low latency execution roles
+\item  \textit{2016...} R/C++ and java developer in a proprietary hedge fund, both research and low latency execution roles
 \end{itemize}
 \end{frame}
 
@@ -68,34 +66,197 @@
 \end{frame}
 
 
-\begin{frame}{Build automation}
+\begin{frame}{Tools and libraries}
 \begin{columns}[T,onlytextwidth]
-	\column{0.33\textwidth}
-	Build systems 
+	\column{0.5\textwidth}
+	Tools 
 	\begin{itemize}
-		\item gnu make/c++
-		\item cmake/c++
-		\item gradle/java
+		\item cmake, make
+		\item gdb, varlgrind
+		\item conan, bintray.com
+		\item gradle, maven
+		\item git, gitlab, github
 	\end{itemize}	
-	\column{0.33\textwidth}
-	Package management
+	\column{0.5\textwidth}
+	Libraries
 	\begin{itemize}
-		\item conan/c++
-		\item maven/java
-		\item cran/R
-		\item pip/python
-		\item nuget/c\#
-	\end{itemize}
-	
-	\column{0.33\textwidth}
-	VCS/CI
-	\begin{itemize}
-		\item git
-		\item github, gitlab, bitbucket
-		\item jenkins
-		\item svn, teamcity (in the past)
+		\item C++: stl, boost \{asio, beast, thread, filesystem\}, Rcpp, rxcpp
+		\item R : dplyr, ggplot, purrr, shiny
+		\item python: pandas, numpy, asyncio
 	\end{itemize}
 \end{columns}
+\end{frame}
+
+\begin{frame}{My code: Rcpp backtesting library (C++)}
+\begin{itemize}
+	\item code: \href{https://github.com/mmitkevich/rticks_v1/blob/master/src/gamma.h} {https://github.com/mmitkevich/rticks\_v1/
+		blob/master/src/gamma.h}
+	\item functional reactive streams design inspired by RX ( Reactive Extensions) library \href{http://rxmarbles.com}{http://rxmarbles.com}
+	\item utilizes C++ 14 template metaprogramming 
+	\item Aim: to became a realtime stream-based analog to R's dplyr
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Use case: crude marketmaking model 1/2}
+Suppose that:
+\begin{itemize}
+\item We want to be market makers of closest quarterly Crude Oil futures contracts on Comex and Nymex exchanges
+\item And keep our portfolio delta $\Delta(t)$ (e.g. normalized net futures position expressed in dollars) small enough to keep risks small:
+$$
+	\Delta(t)=[\sum_{i\in \{CL1@COMEX,CL1@NYMEX\}} \Delta_{i}(t) ] \rightarrow \min_{STRATEGY.PARAMETERS}
+$$
+\item To start with, we choose our bid price $S_{BID}$ and ask price $S_{ASK}$ at fixed distance $D_{HALF.SPREAD}$ from some fair price $S_{FAIR.PRICE}$, defined later:
+$$
+	S_{BID,ASK} = S_{FAIR.PRICE}  \mp D_{HALF.SPREAD} 
+$$
+\item For simplicity we treat both futures essentially the same so we could mix their order books into single order book and use midprice as fair price:
+$$
+   S_{FAIR.PRICE} = 0.5(S_{BEST.BID}+S_{BEST.ASK})
+$$
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Use case: crude marketmaking model 2/2}
+\begin{itemize}
+\item We choose our buy order quantity  $\Gamma_{BUY}$ and (negative) sell order quantity $\Gamma_{SELL}$ to keep our Delta small, but continue to  make markets:
+$$ \Gamma^i_{BUY}(t) = \Gamma_0+\max(0,-\Delta) $$
+$$  \Gamma^i_{SELL}(t) = -(\Gamma_0+\max(0,\Delta)) $$
+\item When executed, these orders would bring our $\Delta$ closer to zero
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Concept: Functional strategy DSL 1}
+In the following N slides I describe preliminary design of functional DSL language aimed for quants to formally specify
+high frequency trading strategies.
+\end{frame}
+\begin{frame}[fragile]{Concept: Market data feeds}
+First, note that conceptually all level1, level2, level3 and execution report feeds generalize to streams of tuples
+\begin{lstlisting}
+feed(t) = [timestamp, symbol, op, price, qty]
+\end{lstlisting}
+Where operation $op$ could have following values:
+\begin{itemize}
+	\item PLACED: order was inserted into the order book
+	\item CANCELED: order was removed from the order book
+	\item FILLED: order was fully filled and is out of the book
+	\item PART\_FILLED: order filled partially and is still in the book
+	\item UPDATED: cumulative quantity at order book price level has changed
+	\item RESET, SNAPSHOT: these two could be used to synchronize order book snapshots with server 
+\end{itemize} 
+We leave transactions (PLACE, AMEND, CANCEL) out of scope for now. 
+\end{frame}
+
+\begin{frame}[fragile]{Concept: streams DSL inspired by GNU R's dplyr package 2}
+\href{dplyr}{dplyr} is a popular GNU R package for data.frame manipulations.
+
+Let's imagine dplyr-like DSL to define our trading strategy. Let's start with defining the feeds using hypothetical $streams$ function
+\begin{lstlisting}
+   symbols = c("CL.1@COMEX", "CL.1@NYMEX")
+   s0 = data_streams(
+     level2=level2_feed(symbols),
+     execs=exec_feed("mike@GS","peter@DB"))
+\end{lstlisting}
+So printing feeds could give us the following output
+\begin{lstlisting}
+>tail(feeds)
+level2|UPDATE|17:23:14.323|CL.1@COMEX | 65.50 | 100
+level2|UPDATE|17:23:14.324|CL.1@NYMEX | 65.52 | -100
+execs |FILL  |17:23:14.324|CL.1@COMEX | 65.51 | 50 | mike@GS
+\end{lstlisting}
+\end{frame}
+\begin{frame}[fragile]{Concept: stream mutation in functional style 3}
+Actual position could be calculating by summing $qty$ for all $executions$:
+\begin{lstlisting}
+   s1 = s0 %>% mutate(
+     position=cumsum(executions))
+\end{lstlisting}
+Note, that:
+\begin{itemize}
+	\item summation is done for each symbol individually.
+	\item  since each stream is a tuple of [price, qty],
+	summation operator outputs [price=sum(price*qty)/sum(qty), qty=sum(qty)]. This corresponds to calcluating of VWAP. This property could be used to greatly simplify DSL language in sense of formulas.
+\end{itemize} 
+\end{frame}
+
+\begin{frame}[fragile]{Concept: mixing order books 4}
+To mix order books we transform $level2$ feed to have common symbol and then
+use $level2\_to\_level1$ function which
+\begin{itemize}
+	\item takes $level2$ stream as its input
+	\item reconstructs order book state on it (filtering matched price levels)
+	\item outputs required $level1$ feed (which basically contains only SNAPSHOT records):
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Concept: calculating required values 5}
+Also we transform last $position$ and $mid$  price into delta.
+\begin{lstlisting}
+   contract_lot=10 # barrels
+   s2 = s1 %>% mutate(
+     level2=level2 %>% mutate(symbol='CL.1@MIXED'),
+     level1=level2_to_level1(level2),
+     best.bid=level1 %>% filter(qty>0),
+     best.ask=level1 %>% filter(qty<0),
+     fair.price=0.5*(best.bid+best.ask),
+     delta=position*mid*contract_lot)
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{Concept: reducing over portfolio 6}
+In the previous example we have calculated delta for each contract, so now we need to reduce it over all symbols in the portfolio
+\begin{lstlisting}
+  s3 = s2 %>% mutate(
+    Delta=reduce(delta, ~ .x+.y)
+  )
+\end{lstlisting}
+Now our $s3$ stream contains everything we need to calculate fair price and our buy/sell quotes:
+\begin{itemize}
+	\item Delta=$\Delta$: total delta of the portfolio, in dollars
+	\item best.bid=$S_{BID}$, best.ask=$S_{ASK}$, fair.price=$S_{FAIR.PRICE}$: mixed book bid, ask and fair price calculated as their average
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Concept: calculating final market maker quotes 7}
+\begin{lstlisting}
+  gamma0=100 # USD
+  half_spread=0.01 # USD
+  s4 = s3 %>% mutate(
+     buy = (fair.price-half_spread) %>% 
+        mutate(
+          qty=(max(0,-Delta)+gamma0)
+                 /contract_lot/price),
+     sell = (fair.price+half_spread) %>% 
+        mutate(
+          qty=-(max(0,Delta)+gamma0)
+                /contract_lot/price))
+\end{lstlisting}
+\end{frame}
+These buy and ask quotes are subject to be maintained in the market by high-frequency execution service. This service receives desired buy and sell prices and sends orders accordingly
+
+\begin{frame}{Concept: Execution, further improvements 8}
+\begin{itemize}
+\item Possible latency reduction could be achieved by mixed software/hardware design. For example, our simple strategy only uses simple arithmetics, max/min operations and orderbook mixing operations. If properly implemented in FPGA hardware it could be possible to reduce latency introduced by software.
+\item DSL language could be implemented not only with R dplyr-like syntax. Actually all 'mutate' clauses are really optional. Usability by quants is the main concern.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{My code: offheap order matching engine (Java)}
+\begin{itemize}
+	\item \href{https://github.com/mmitkevich/lob-java/blob/master/src/main/java/org/freeticks/lob/OffHeapBook.java}
+	{https://github.com/mmitkevich/lob-java/blob/master/src/main/java/
+		org/freeticks/lob/OffHeapBook.java}
+	\item uses DirectBuffer  to manipulate offheap memory and minimize allocations
+	\item price level index implemented as plain array instead of sorted rb-tree
+	\item orders are allocated in offheap circular arena
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{My code: lockless SPSC queue (.NET)}
+\begin{itemize}
+	\item \href{https://github.com/mmitkevich/Snail/blob/master/Snail/Threading/BQueue.cs} {https://github.com/mmitkevich/Snail/
+		blob/master/Snail/Threading/BQueue.cs}
+	\item CLR implementation of bounded lockless queue addressing false sharing problem for low latency core-to-core communication
+\end{itemize}
 \end{frame}
 
 \begin{frame}{Links}
@@ -105,3 +266,7 @@
 
 \end{frame}
 \end{document}
+
+
+
+
