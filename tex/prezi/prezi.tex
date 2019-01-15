@@ -87,49 +87,53 @@
 \end{columns}
 \end{frame}
 
-\begin{frame}{My code: Rcpp backtesting library (C++)}
+\begin{frame}{My code: Rticks backtesting library (C++)}
 \begin{itemize}
-	\item code: \href{https://github.com/mmitkevich/rticks_v1/blob/master/src/gamma.h} {https://github.com/mmitkevich/rticks\_v1/
+	\item gamma strategy (mean reversion): \href{https://github.com/mmitkevich/rticks_v1/blob/master/src/gamma.h} {https://github.com/mmitkevich/rticks\_v1/
 		blob/master/src/gamma.h}
-	\item functional reactive streams design inspired by RX ( Reactive Extensions) library \href{http://rxmarbles.com}{http://rxmarbles.com}
-	\item utilizes C++ 14 template metaprogramming 
-	\item Aim: to became a realtime stream-based analog to R's dplyr
+	\item functional reactive streams design inspired by  Reactive Extensions library (reactivex.io) \href{http://rxmarbles.com}{http://rxmarbles.com}, \href{http://reactivex.io}{http://reactivex.io}, \href{https://github.com/ReactiveX/RxCpp/tree/master/Rx/v2/src/rxcpp}{http://github.com/ReactiveX/RxCpp}
+	\item utilizes C++ 14 and templates to produce optimized code using higher-level concepts
+	\item Goals: to became a realtime stream-based alternative to R's dplyr, suitable for backtest/optimization and low-latency exectuion
 \end{itemize}
 \end{frame}
 
 \begin{frame}{Use case: crude marketmaking model 1/2}
 Suppose that:
 \begin{itemize}
-\item We want to be market makers of closest quarterly Crude Oil futures contracts on Comex and Nymex exchanges
-\item And keep our portfolio delta $\Delta(t)$ (e.g. normalized net futures position expressed in dollars) small enough to keep risks small:
-$$
-	\Delta(t)=[\sum_{i\in \{CL1@COMEX,CL1@NYMEX\}} \Delta_{i}(t) ] \rightarrow \min_{STRATEGY.PARAMETERS}
-$$
-\item To start with, we choose our bid price $S_{BID}$ and ask price $S_{ASK}$ at fixed distance $D_{HALF.SPREAD}$ from some fair price $S_{FAIR.PRICE}$, defined later:
-$$
+	\item We want to be market makers of closest quarterly Crude Oil futures contracts on Comex and Nymex exchanges
+	\item And keep our portfolio delta $\Delta(t)$ (e.g. normalized net futures position expressed in dollars) small enough to keep risks small:
+	$$
+	\Delta(t)=[\sum_{i\in \{CL.1@COMEX,CL.1@NYMEX\}} \Delta_{i}(t) ] \rightarrow \min_{STRATEGY.PARAMETERS}
+	$$
+	\item To start with, we choose our bid price $S_{BID}$ and ask price $S_{ASK}$ at fixed distance $D_{HALF.SPREAD}$ from some fair price $S_{FAIR.PRICE}$, defined later:
+	$$
 	S_{BID,ASK} = S_{FAIR.PRICE}  \mp D_{HALF.SPREAD} 
-$$
-\item For simplicity we treat both futures essentially the same so we could mix their order books into single order book and use midprice as fair price:
-$$
-   S_{FAIR.PRICE} = 0.5(S_{BEST.BID}+S_{BEST.ASK})
-$$
+	$$
+	\item For simplicity we treat both futures essentially the same so we could mix their order books into single order book and use midprice as fair price:
+	$$
+	S_{FAIR.PRICE} = 0.5(S_{BEST.BID}+S_{BEST.ASK})
+	$$
 \end{itemize}
 \end{frame}
 
 \begin{frame}{Use case: crude marketmaking model 2/2}
 \begin{itemize}
 \item We choose our buy order quantity  $\Gamma_{BUY}$ and (negative) sell order quantity $\Gamma_{SELL}$ to keep our Delta small, but continue to  make markets:
-$$ \Gamma^i_{BUY}(t) = \Gamma_0+\max(0,-\Delta) $$
-$$  \Gamma^i_{SELL}(t) = -(\Gamma_0+\max(0,\Delta)) $$
+$$\Gamma^i_{BUY}(t)=\Gamma_0+\max(0,-\Delta) $$
+$$\Gamma^i_{SELL}(t)=-(\Gamma_0+\max(0,\Delta)) $$
 \item When executed, these orders would bring our $\Delta$ closer to zero
 \end{itemize}
 \end{frame}
 
-\begin{frame}[fragile]{Concept: Functional strategy DSL 1}
-In the following N slides I describe preliminary design of functional DSL language aimed for quants to formally specify
-high frequency trading strategies.
+\begin{frame}[fragile]{Concept: Functional strategy DSL 0}
+\begin{itemize}
+\item In the following couple of slides I describe preliminary design of functional DSL language aimed for R \& python quants to formally specify
+high frequency trading strategies for backtesting purposes
+\item Strategies are formulated as functional transformations of data and execution feeds (streams) so that the same code could be used in production as well
+\end{itemize}
 \end{frame}
-\begin{frame}[fragile]{Concept: Market data feeds}
+
+\begin{frame}[fragile]{Concept: Market data feeds 1}
 First, note that conceptually all level1, level2, level3 and execution report feeds generalize to streams of tuples
 \begin{lstlisting}
 feed(t) = [timestamp, symbol, op, price, qty]
@@ -149,7 +153,7 @@ We leave transactions (PLACE, AMEND, CANCEL) out of scope for now.
 \begin{frame}[fragile]{Concept: streams DSL inspired by GNU R's dplyr package 2}
 \href{dplyr}{dplyr} is a popular GNU R package for data.frame manipulations.
 
-Let's imagine dplyr-like DSL to define our trading strategy. Let's start with defining the feeds using hypothetical $streams$ function
+Let's imagine dplyr-like DSL to define our trading strategy. Let's start with defining the feeds using hypothetical $data\_streams$ function
 \begin{lstlisting}
    symbols = c("CL.1@COMEX", "CL.1@NYMEX")
    s0 = data_streams(
@@ -173,9 +177,29 @@ Actual position could be calculating by summing $qty$ for all $executions$:
 Note, that:
 \begin{itemize}
 	\item summation is done for each symbol individually.
-	\item  since each stream is a tuple of [price, qty],
-	summation operator outputs [price=sum(price*qty)/sum(qty), qty=sum(qty)]. This corresponds to calcluating of VWAP. This property could be used to greatly simplify DSL language in sense of formulas.
-\end{itemize} 
+	\item logically position stream is also tuple [price, qty] so we should define arithmetic operations on such tuples
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Concept: simplify arithmetics}
+
+Let's denote 
+\begin{itemize}
+	\item $S$:price (in USD), 
+	\item $Q$:qty (in items), 
+	\item $X=[S,Q]$:vector of both,
+	\item $U(X)=SQ$: value of this vector
+\end{itemize}
+
+Let's define plus, minus, mul, div operators
+$$X_1+X_2=[S_1,Q_1]+[S_2,Q_2]=[S_1Q_1+S_2Q_2, 1] \rightarrow
+U=S_1Q_1+S_2Q_2=U_1+U_2$$
+$$X_1-X_2=[S_1Q_1-S_2Q_2, 1] \rightarrow U=U_1-U_2$$
+$$X_1*X_2=[S_1Q_1S_2Q_2,1]\rightarrow U=U_1U_2$$
+$$X_1/X_2=[S_1Q_1/S_2Q_2,1]\rightarrow U=U_1/U_2$$
+
+This corresponds to casting [price, qty] tuple to price*qty real number, and casting back real number to [number, 1] tuple.
+This would simplify arithmetics
 \end{frame}
 
 \begin{frame}[fragile]{Concept: mixing order books 4}
@@ -193,13 +217,15 @@ Also we transform last $position$ and $mid$  price into delta.
 \begin{lstlisting}
    contract_lot=10 # barrels
    s2 = s1 %>% mutate(
-     level2=level2 %>% mutate(symbol='CL.1@MIXED'),
+     level2=level2%>%mutate(symbol='CL.1@MIXED'),
      level1=level2_to_level1(level2),
      best.bid=level1 %>% filter(qty>0),
      best.ask=level1 %>% filter(qty<0),
      fair.price=0.5*(best.bid+best.ask),
-     delta=position*mid*contract_lot)
+     delta=position*fair.price*contract_lot)
 \end{lstlisting}
+
+Note, that stream of position is a single number,
 \end{frame}
 
 \begin{frame}[fragile]{Concept: reducing over portfolio 6}
@@ -221,17 +247,15 @@ Now our $s3$ stream contains everything we need to calculate fair price and our 
   gamma0=100 # USD
   half_spread=0.01 # USD
   s4 = s3 %>% mutate(
-     buy = (fair.price-half_spread) %>% 
-        mutate(
+     buy = (fair.price-half_spread) %>% mutate(
           qty=(max(0,-Delta)+gamma0)
                  /contract_lot/price),
-     sell = (fair.price+half_spread) %>% 
-        mutate(
+     sell = (fair.price+half_spread) %>% mutate(
           qty=-(max(0,Delta)+gamma0)
                 /contract_lot/price))
 \end{lstlisting}
+These buy and ask quotes are subject to be maintained in the market by high-frequency execution service. This service receives desired buy and sell quotes (with respective quantities) and sends orders accordingly.
 \end{frame}
-These buy and ask quotes are subject to be maintained in the market by high-frequency execution service. This service receives desired buy and sell prices and sends orders accordingly
 
 \begin{frame}{Concept: Execution, further improvements 8}
 \begin{itemize}
