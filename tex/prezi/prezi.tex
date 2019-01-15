@@ -229,7 +229,7 @@ Note, that stream of position is a single number,
 \end{frame}
 
 \begin{frame}[fragile]{Concept: reducing over portfolio 6}
-In the previous example we have calculated delta for each contract, so now we need to reduce it over all symbols in the portfolio
+In the previous example we have calculated delta for each contract, so now we need to summarize it over all symbols in the portfolio
 \begin{lstlisting}
   s3 = s2 %>% mutate(
     Delta=reduce(delta, ~ .x+.y)
